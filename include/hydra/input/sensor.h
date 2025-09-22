@@ -46,6 +46,8 @@
 // Government is authorized to reproduce and distribute reprints for Government
 // purposes notwithstanding any copyright notation herein.
 #pragma once
+
+// TODO(nathan) try to avoid pulling in factories in the header
 #include <config_utilities/virtual_config.h>
 
 #include <Eigen/Geometry>
@@ -70,10 +72,14 @@ class Sensor {
   using ConstPtr = std::shared_ptr<const Sensor>;
 
   struct Config {
+    // Minimum range the sensor can handle
     double min_range = 0.0f;
+    // Maximum range the sensor can handle
     double max_range = std::numeric_limits<double>::infinity();
-    // TODO(nathan) try to avoid pulling in factories in the header
+    //! @brief Transform between body and sensor
     config::VirtualConfig<SensorExtrinsics> extrinsics;
+    //! @brief Sensor-specific semantic labels that the sensor should ignore
+    std::set<uint32_t> invalid_labels;
   } const config;
 
   explicit Sensor(const Config& config, const std::string& name);
