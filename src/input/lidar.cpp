@@ -117,6 +117,22 @@ Lidar::Lidar(const Config& config, const std::string& name)
 
 float Lidar::getPointDepth(const Eigen::Vector3f& p) const { return p.norm(); }
 
+Eigen::Vector3f Lidar::getPixelBearing(float u, float v) const {
+  // spherical coords from u and v
+  float theta = (horizontal_fov_rad_ / 2.0f) - (u / width_) * horizontal_fov_rad_;
+  float phi;
+  if (config_.is_asymmetric) {
+    phi = vertical_fov_top_rad_ - (v / height_) * vertical_fov_rad_;
+  } else {
+    phi = (vertical_fov_rad_ / 2.0f) - (v / height_) * vertical_fov_rad_;
+  }
+
+  auto p_C = Eigen::Vector3f(
+      std::cos(phi) * std::cos(theta), std::cos(phi) * std::sin(theta), std::sin(phi));
+
+  return p_C.normalized();
+}
+
 float Lidar::computeRayDensity(float voxel_size, float depth) const {
   // we want rays per meter... we can do this by computing a virtual focal length
   // compute focal lengths based on percent of spherical image inside 90 degree FOV

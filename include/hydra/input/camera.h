@@ -83,6 +83,8 @@ class Camera : public Sensor {
 
   float getPointDepth(const Eigen::Vector3f& p) const override;
 
+  Eigen::Vector3f getPixelBearing(float u, float v) const override;
+
   float computeRayDensity(float voxel_size, float depth) const override;
 
   bool finalizeRepresentations(InputData& input,

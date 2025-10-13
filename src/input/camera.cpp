@@ -110,6 +110,12 @@ Camera::Camera(const Config& config, const std::string& name)
 
 float Camera::getPointDepth(const Eigen::Vector3f& p) const { return p.z(); }
 
+Eigen::Vector3f Camera::getPixelBearing(float u, float v) const {
+  auto p_C =
+      Eigen::Vector3f((u - config_.cx) / config_.fx, (v - config_.cy) / config_.fy, 1);
+  return p_C.normalized();
+}
+
 float Camera::computeRayDensity(float voxel_size, float depth) const {
   return config_.fx * config_.fy * std::pow(voxel_size / depth, 2.f);
 }

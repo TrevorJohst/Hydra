@@ -117,6 +117,13 @@ class Sensor {
   virtual float getPointDepth(const Eigen::Vector3f& p) const = 0;
 
   /**
+   * @brief Get the bearing vector associated with an image coordinate
+   * @param u Input x image plane coordinate
+   * @param v Input y image plane coordinate
+   */
+  virtual Eigen::Vector3f getPixelBearing(float u, float v) const = 0;
+
+  /**
    * @brief Get the average ray density at a voxel at a given range
    * @param voxel_size Voxel size to compute the density for
    * @param depth Depth to compute the density at
