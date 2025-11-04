@@ -601,6 +601,10 @@ void declare_config(FrontierExtractor::Config& config) {
   field(config.minimum_relative_z, "minimum_relative_z");
   field(config.maximum_relative_z, "maximum_relative_z");
   field(config.compute_frontier_shape, "compute_frontier_shape");
+  field(config.extract_rayfronts, "extract_rayfronts");
+  if (config.extract_rayfronts) {
+    field(config.rayfront_config, "rayfront_config", false);
+  }
 }
 
 }  // namespace hydra

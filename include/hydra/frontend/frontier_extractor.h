@@ -7,39 +7,12 @@
 #include "hydra/active_window/active_window_output.h"
 #include "hydra/active_window/volumetric_window.h"
 #include "hydra/common/dsg_types.h"
+#include "hydra/frontend/frontier.h"
+#include "hydra/frontend/rayfront_extractor.h"
 
 namespace hydra {
 
 class NearestNodeFinder;
-
-struct Frontier {
- public:
-  Frontier(){};
-  Frontier(Eigen::Vector3d c,
-           Eigen::Vector3d s,
-           Eigen::Quaterniond o,
-           size_t n,
-           spatial_hash::BlockIndex b)
-      : center(c),
-        scale(s),
-        orientation(o),
-        num_frontier_voxels(n),
-        block_index(b),
-        has_shape_information(true){};
-  Frontier(Eigen::Vector3d c, size_t n, spatial_hash::BlockIndex b)
-      : center(c),
-        num_frontier_voxels(n),
-        block_index(b),
-        has_shape_information(false){};
-
- public:
-  Eigen::Vector3d center;
-  Eigen::Vector3d scale;
-  Eigen::Quaterniond orientation;
-  size_t num_frontier_voxels = 0;
-  spatial_hash::BlockIndex block_index;
-  bool has_shape_information = false;
-};
 
 class FrontierExtractor {
  public:
@@ -57,6 +30,8 @@ class FrontierExtractor {
     double minimum_relative_z = -0.2;
     double maximum_relative_z = 1;
     bool compute_frontier_shape = false;
+    bool extract_rayfronts = false;
+    RayFrontExtractor::Config rayfront_config;
   } const config;
 
   explicit FrontierExtractor(const Config& config);
