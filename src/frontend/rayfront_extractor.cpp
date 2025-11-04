@@ -25,6 +25,13 @@ struct AngleBinHash {
 };
 }  // namespace
 
+void declare_config(RayFrontExtractor::Config& config) {
+  using namespace config;
+  name("RayFrontExtractor::Config");
+  field(config.erosion_kernel_size, "erosion_kernel_size");
+  field(config.rayfront_range, "rayfront_range");
+}
+
 RayFrontExtractor::RayFrontExtractor(const Config& config) : config(config) {}
 
 void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
@@ -206,13 +213,6 @@ void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
 
     frontier.rayfronts = std::move(merged);
   }
-}
-
-void declare_config(RayFrontExtractor::Config& config) {
-  using namespace config;
-  name("RayFrontExtractor::Config");
-  field(config.erosion_kernel_size, "erosion_kernel_size");
-  field(config.rayfront_range, "rayfront_range");
 }
 
 }  // namespace hydra

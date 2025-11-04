@@ -121,7 +121,13 @@ void splitAllFrontiers(std::vector<std::vector<Eigen::Vector3f>>& frontiers,
 FrontierExtractor::FrontierExtractor(const Config& config)
     : config(config),
       next_node_id_(config.prefix, 0),
-      map_window_(GlobalInfo::instance().createVolumetricWindow()) {}
+      map_window_(GlobalInfo::instance().createVolumetricWindow()),
+      sinks_(Sink::instantiate(config.sinks)) {
+  if (config.extract_rayfronts)
+    rayfront_extractor_ = std::make_unique<RayFrontExtractor>(config.rayfront_config);
+
+  VLOG(1) << "\n" << Sink::printSinks(sinks_);
+}
 
 void clusterFrontiers(const SpatialCloud::Ptr cloud,
                       const double cluster_tolerance,
@@ -497,6 +503,10 @@ void FrontierExtractor::detectFrontiers(const ActiveWindowOutput& input,
 
   archived_places_.clear();
   just_archived_blocks_.clear();
+
+  if (rayfront_extractor_) rayfront_extractor_->addRayFronts(input, frontiers_);
+
+  // Sink::callAll(sinks_, input.timestamp_ns, frontiers_);
 }
 
 void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& graph) {
@@ -605,6 +615,7 @@ void declare_config(FrontierExtractor::Config& config) {
   if (config.extract_rayfronts) {
     field(config.rayfront_config, "rayfront_config", false);
   }
+  field(config.sinks, "sinks");
 }
 
 }  // namespace hydra

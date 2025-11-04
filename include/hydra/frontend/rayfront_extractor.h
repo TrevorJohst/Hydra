@@ -1,4 +1,6 @@
 #pragma once
+#include <config_utilities/virtual_config.h>
+
 #include "hydra/active_window/active_window_output.h"
 #include "hydra/frontend/frontier.h"
 

@@ -7,6 +7,7 @@
 #include "hydra/active_window/active_window_output.h"
 #include "hydra/active_window/volumetric_window.h"
 #include "hydra/common/dsg_types.h"
+#include "hydra/common/output_sink.h"
 #include "hydra/frontend/frontier.h"
 #include "hydra/frontend/rayfront_extractor.h"
 
@@ -16,6 +17,8 @@ class NearestNodeFinder;
 
 class FrontierExtractor {
  public:
+  using Sink = OutputSink<uint64_t, const std::vector<Frontier>&>;
+
   struct Config {
     char prefix = 'f';
     double cluster_tolerance = .3;
@@ -32,6 +35,7 @@ class FrontierExtractor {
     bool compute_frontier_shape = false;
     bool extract_rayfronts = false;
     RayFrontExtractor::Config rayfront_config;
+    std::vector<Sink::Factory> sinks;
   } const config;
 
   explicit FrontierExtractor(const Config& config);
@@ -57,8 +61,11 @@ class FrontierExtractor {
   std::unique_ptr<VolumetricWindow> map_window_;
 
   std::unique_ptr<NearestNodeFinder> place_finder_;
+  std::unique_ptr<RayFrontExtractor> rayfront_extractor_;
   std::vector<Frontier> frontiers_;
   std::vector<Frontier> archived_frontiers_;
+
+  Sink::List sinks_;
 
   // Helper functions.
   void updateTsdf(const ActiveWindowOutput& msg);
