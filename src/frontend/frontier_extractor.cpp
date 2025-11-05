@@ -120,8 +120,8 @@ void splitAllFrontiers(std::vector<std::vector<Eigen::Vector3f>>& frontiers,
   }
 }
 
-FrontierExtractor::FrontierExtractor(const Config& config)
-    : config(config),
+FrontierExtractor::FrontierExtractor(const Config& c)
+    : config(config::checkValid(c)),
       next_node_id_(config.prefix, 0),
       map_window_(GlobalInfo::instance().createVolumetricWindow()),
       sinks_(Sink::instantiate(config.sinks)) {
@@ -508,7 +508,7 @@ void FrontierExtractor::detectFrontiers(const ActiveWindowOutput& input,
 
   if (rayfront_extractor_) rayfront_extractor_->addRayFronts(input, frontiers_);
 
-  // Sink::callAll(sinks_, input.timestamp_ns, frontiers_);
+  Sink::callAll(sinks_, input.timestamp_ns, frontiers_);
 }
 
 void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& graph) {

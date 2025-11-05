@@ -36,6 +36,8 @@ RayFrontExtractor::RayFrontExtractor(const Config& config) : config(config) {}
 
 void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
                                      std::vector<Frontier>& frontiers) {
+  if (frontiers.size() == 0) return;
+
   // Get the rayfront extraction range and fallback frontier size
   const auto& camera = input.sensor_data->getSensor();
   double sensor_range =
@@ -116,13 +118,13 @@ void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
   // Mask criteria to filter out frontiers
   // TODO: Add config options for some of these
   Eigen::ArrayXX<bool> mask_dot = (dot_prod.array() <= 0.0);               // M x N
-  Eigen::ArrayXX<bool> mask_ortho = (ortho_dist.array() > frontier_size);  // M x N
+  // Eigen::ArrayXX<bool> mask_ortho = (ortho_dist.array() > frontier_size);  // M x N
   Eigen::ArrayXX<bool> mask_close =
       (dist.array() < 2.0 * frontier_size).replicate(1, N);  // M x N
   Eigen::ArrayXX<bool> mask_far =
       (dist.array() > 3.0 * sensor_range).replicate(1, N);  // M x N
 
-  Eigen::ArrayXXi mask_sum = (mask_dot.cast<int>() + mask_ortho.cast<int>() +
+  Eigen::ArrayXXi mask_sum = (mask_dot.cast<int>() + //mask_ortho.cast<int>() +
                               mask_close.cast<int>() + mask_far.cast<int>());
   Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic> frontier_mask =
       (mask_sum > 0).matrix();
