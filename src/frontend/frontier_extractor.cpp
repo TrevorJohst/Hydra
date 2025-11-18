@@ -126,7 +126,7 @@ FrontierExtractor::FrontierExtractor(const Config& c)
       map_window_(GlobalInfo::instance().createVolumetricWindow()),
       sinks_(Sink::instantiate(config.sinks)) {
   if (config.extract_rayfronts)
-    rayfront_extractor_ = std::make_unique<RayFrontExtractor>(config.rayfront_config);
+    rayfront_extractor_ = std::make_unique<RayfrontExtractor>(config.rayfront_config);
 
   VLOG(1) << "\n" << Sink::printSinks(sinks_);
 }
@@ -506,7 +506,7 @@ void FrontierExtractor::detectFrontiers(const ActiveWindowOutput& input,
   archived_places_.clear();
   just_archived_blocks_.clear();
 
-  if (rayfront_extractor_) rayfront_extractor_->addRayFronts(input, frontiers_);
+  if (rayfront_extractor_) rayfront_extractor_->addRayfronts(input, frontiers_);
 
   Sink::callAll(sinks_, input.timestamp_ns, frontiers_);
 }

@@ -34,7 +34,7 @@ class FrontierExtractor {
     double maximum_relative_z = 1;
     bool compute_frontier_shape = false;
     bool extract_rayfronts = false;
-    RayFrontExtractor::Config rayfront_config;
+    RayfrontExtractor::Config rayfront_config;
     std::vector<Sink::Factory> sinks;
   } const config;
 
@@ -61,7 +61,7 @@ class FrontierExtractor {
   std::unique_ptr<VolumetricWindow> map_window_;
 
   std::unique_ptr<NearestNodeFinder> place_finder_;
-  std::unique_ptr<RayFrontExtractor> rayfront_extractor_;
+  std::unique_ptr<RayfrontExtractor> rayfront_extractor_;
   std::vector<Frontier> frontiers_;
   std::vector<Frontier> archived_frontiers_;
 

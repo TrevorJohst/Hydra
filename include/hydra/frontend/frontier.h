@@ -5,6 +5,8 @@
 #include <Eigen/Geometry>
 #include <vector>
 
+#include "hydra/common/dsg_types.h"
+
 namespace hydra {
 
 struct RayFront {

@@ -6,7 +6,7 @@
 
 namespace hydra {
 
-class RayFrontExtractor {
+class RayfrontExtractor {
  public:
   struct Config {
     int erosion_kernel_size = 3;
@@ -14,11 +14,11 @@ class RayFrontExtractor {
     double angle_bin_deg = 30.0;
   } const config;
 
-  explicit RayFrontExtractor(const Config& config);
+  explicit RayfrontExtractor(const Config& config);
 
-  void addRayFronts(const ActiveWindowOutput& input, std::vector<Frontier>& frontiers);
+  void addRayfronts(const ActiveWindowOutput& input, std::vector<Frontier>& frontiers);
 };
 
-void declare_config(RayFrontExtractor::Config& config);
+void declare_config(RayfrontExtractor::Config& config);
 
 }  // namespace hydra
