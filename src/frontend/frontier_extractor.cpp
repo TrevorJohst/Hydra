@@ -524,6 +524,13 @@ void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& g
 
   // Add non-archived frontiers and save their node ids for removing
   for (auto& frontier : frontiers_) {
+    std::vector<RayfrontInfo> rayfront_infos;
+    rayfront_infos.reserve(frontier.rayfronts.size());
+    for (const auto& rf : frontier.rayfronts) {
+      rayfront_infos.push_back(
+          RayfrontInfo{rf.direction, rf.camera_origin, rf.weight, rf.semantic_label});
+    }
+
     place_finder_->find(
         frontier.center, 1, false, [&](NodeId place_id, size_t, double) {
           PlaceNodeAttributes::Ptr attrs(new PlaceNodeAttributes(1, 0));
@@ -536,6 +543,7 @@ void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& g
           attrs->last_update_time_ns = timestamp_ns;
           attrs->is_active = false;
           attrs->active_frontier = true;
+          attrs->rayfronts = rayfront_infos;
           graph.emplaceNode(DsgLayers::PLACES, next_node_id_, std::move(attrs));
           graph.insertEdge(place_id, next_node_id_);
         });
@@ -546,6 +554,13 @@ void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& g
 
   // Add archived frontiers
   for (auto& frontier : archived_frontiers_) {
+    std::vector<RayfrontInfo> rayfront_infos;
+    rayfront_infos.reserve(frontier.rayfronts.size());
+    for (const auto& rf : frontier.rayfronts) {
+      rayfront_infos.push_back(
+          RayfrontInfo{rf.direction, rf.camera_origin, rf.weight, rf.semantic_label});
+    }
+
     place_finder_->find(
         frontier.center, 1, false, [&](NodeId place_id, size_t, double) {
           PlaceNodeAttributes::Ptr attrs(new PlaceNodeAttributes(1, 0));
@@ -558,6 +573,7 @@ void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& g
           attrs->last_update_time_ns = timestamp_ns;
           attrs->is_active = false;
           attrs->active_frontier = false;
+          attrs->rayfronts = rayfront_infos;
           graph.emplaceNode(DsgLayers::PLACES, next_node_id_, std::move(attrs));
           graph.insertEdge(place_id, next_node_id_);
         });
