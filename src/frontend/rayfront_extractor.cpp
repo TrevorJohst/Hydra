@@ -13,35 +13,38 @@ namespace {
 struct AngleBin {
   int theta_bin;
   int phi_bin;
-  uint32_t semantic_label;
 
   bool operator==(const AngleBin& other) const {
-    return theta_bin == other.theta_bin && phi_bin == other.phi_bin &&
-           semantic_label == other.semantic_label;
+    return theta_bin == other.theta_bin && phi_bin == other.phi_bin;
   }
 };
 
 struct AngleBinHash {
   std::size_t operator()(const AngleBin& k) const noexcept {
-    return std::hash<int>()(k.theta_bin) ^ (std::hash<int>()(k.phi_bin) << 1) ^
-           (std::hash<uint32_t>()(k.semantic_label) << 2);
+    return std::hash<int>()(k.theta_bin) ^ (std::hash<int>()(k.phi_bin) << 1);
   }
 };
 
+template <typename T>
 struct ConcatView {
- public:
-  ConcatView(std::vector<Frontier>& a, std::vector<Frontier>& b) : a_(&a), b_(&b) {}
+  std::vector<T>& a;
+  std::vector<T>& b;
 
-  std::size_t size() const { return a_->size() + b_->size(); }
+  ConcatView(std::vector<T>& a_, std::vector<T>& b_) : a(a_), b(b_) {}
 
-  Frontier& operator[](std::size_t i) {
-    if (i < a_->size()) return (*a_)[i];
-    return (*b_)[i - a_->size()];
+  size_t size() const { return a.size() + b.size(); }
+
+  T& operator[](size_t i) {
+    if (i < a.size()) return (a)[i];
+    if (i - a.size() < b.size()) return b[i - a.size()];
+    throw std::out_of_range("ConcatView index out of range");
   }
 
- private:
-  std::vector<Frontier>* a_;
-  std::vector<Frontier>* b_;
+  const T& operator[](size_t i) const {
+    if (i < a.size()) return (a)[i];
+    if (i - a.size() < b.size()) return b[i - a.size()];
+    throw std::out_of_range("ConcatView index out of range");
+  }
 };
 }  // namespace
 
@@ -55,20 +58,22 @@ void declare_config(RayfrontExtractor::Config& config) {
 RayfrontExtractor::RayfrontExtractor(const Config& config)
     : config(config), sensor_range_(config.rayfront_range) {}
 
-void RayfrontExtractor::mergeRayfronts(std::vector<Frontier>& frontiers) {
+template <typename FrontierArrayLike>
+void RayfrontExtractor::mergeRayfronts(FrontierArrayLike& frontiers) {
   if (frontiers.size() == 0) return;
 
   const double angle_bin_rad = config.angle_bin_deg * M_PI / 180.0;
-  for (Frontier& frontier : frontiers) {
+  for (size_t i = 0; i < frontiers.size(); ++i) {
+    Frontier& frontier = frontiers[i];
     if (frontier.rayfronts.size() <= 1) continue;
 
     std::unordered_map<AngleBin, std::vector<RayFront>, AngleBinHash> bins;
 
-    // Bin rays by angle (and label)
+    // Bin rays by angle
     for (const RayFront& rf : frontier.rayfronts) {
       int theta_bin = static_cast<int>(std::floor(rf.theta / angle_bin_rad));
       int phi_bin = static_cast<int>(std::floor((rf.phi + M_PI) / angle_bin_rad));
-      bins[{theta_bin, phi_bin, rf.semantic_label}].push_back(rf);
+      bins[{theta_bin, phi_bin}].push_back(rf);
     }
 
     std::vector<RayFront> merged;
@@ -79,92 +84,142 @@ void RayfrontExtractor::mergeRayfronts(std::vector<Frontier>& frontiers) {
       const auto& rayfronts_vec = bin_rayfronts.second;
       if (rayfronts_vec.empty()) continue;
 
-      // Linear weighting of the direction, label with highest weight
+      // Take the dominant label in this bin
+      std::unordered_map<uint32_t, double> label_weights;
+      for (const auto& rf : rayfronts_vec)
+        label_weights[rf.semantic_label] += rf.weight;
+
+      uint32_t voted_label = 0;
+      double max_label_weight = -1.0;
+      for (const auto& label_weight : label_weights) {
+        if (label_weight.second > max_label_weight) {
+          voted_label = label_weight.first;
+          max_label_weight = label_weight.second;
+        }
+      }
+
+      // Linear weighting of direction, highest weight origin for this label
       Eigen::Vector3d weighted_dir(0.0, 0.0, 0.0);
       double sum_weight = 0.0;
+      Eigen::Vector3d dominant_origin;
+      double max_weight = -1.0;
 
       for (const auto& rf : rayfronts_vec) {
+        if (rf.semantic_label != voted_label) continue;
+
         weighted_dir += rf.weight * rf.direction;
         sum_weight += rf.weight;
+
+        if (rf.weight > max_weight) {
+          dominant_origin = rf.camera_origin;
+          max_weight = rf.weight;
+        }
       }
 
       if (sum_weight > 0.0) weighted_dir /= sum_weight;
       weighted_dir.normalize();
 
-      merged.emplace_back(weighted_dir, bin_rayfronts.first.semantic_label, sum_weight);
+      merged.emplace_back(weighted_dir, dominant_origin, voted_label, sum_weight);
     }
 
     frontier.rayfronts = std::move(merged);
   }
 }
 
+template void RayfrontExtractor::mergeRayfronts(std::vector<Frontier>&);
+template void RayfrontExtractor::mergeRayfronts(ConcatView<Frontier>&);
+
+template <typename FrontierArrayLike>
 bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
                                         const std::vector<uint32_t>& ray_labels,
-                                        const Eigen::Vector3d& camera_origin,
-                                        std::vector<Frontier>& frontiers) {
+                                        const Eigen::MatrixXd& camera_origins,
+                                        FrontierArrayLike& frontiers) {
   // Guards
   if (sensor_range_ < 0.0) {
-    LOG(ERROR)
-        << "Sensor range must be set to a non-negative value in the rayfront extractor "
-           "config, or updated with setSensorRange.";
+    LOG(ERROR) << "Sensor range must be set to a non-negative value in the rayfront "
+                  "extractor config, or updated with setSensorRange.";
+    return false;
+  }
+
+  if (ray_dirs.rows() != static_cast<Eigen::Index>(ray_labels.size()) ||
+      (camera_origins.rows() != 1 && ray_dirs.rows() != camera_origins.rows())) {
+    LOG(ERROR) << "ray_dirs, ray_labels, and camera_origins must have matching "
+                  "dimensions, ray_dirs has "
+               << ray_dirs.rows() << " rows, ray_labels has " << ray_labels.size()
+               << " elements, and camera_origins has " << camera_origins.rows();
     return false;
   }
 
   int N = ray_labels.size();
-  if (N == 0) return false;
+  int M = frontiers.size();
+  bool common_origin = camera_origins.rows() == 1;
 
-  if (ray_dirs.rows() != static_cast<Eigen::Index>(ray_labels.size())) {
-    LOG(ERROR) << "ray_dirs and ray_labels must have matching dimensions, ray_dirs has "
-               << ray_dirs.rows() << " rows and ray_labels has " << ray_labels.size()
-               << " elements.";
-    return false;
-  }
+  if (N == 0 || M == 0) return false;
 
   // Make a matrix of frontier positions for calculations
-  int M = frontiers.size();
   Eigen::MatrixXd frontier_orig(M, 3);  // M x 3
-  for (size_t i = 0; i < M; ++i) frontier_orig.row(i) = frontiers[i].center;
+  for (int i = 0; i < M; ++i) frontier_orig.row(i) = frontiers[i].center;
 
-  // Dot product from frontier to rayfront
-  Eigen::MatrixXd frontier_vec =
-      frontier_orig.rowwise() -
-      camera_origin.transpose();  // (M x 3) - (3 x 1)^T = M x 3
-  Eigen::MatrixXd dot_prod =
-      frontier_vec * ray_dirs.transpose();  // (M x 3) * (N x 3)^T = M x N
+  // Dot product from frontier to rayfront and distance to each frontier
+  Eigen::MatrixXd dot_prod(M, N);
+  Eigen::MatrixXd dist(M, N);
+  for (int j = 0; j < N; ++j) {
+    Eigen::MatrixXd frontier_vec;  // M x 3
+    if (common_origin)
+      frontier_vec = frontier_orig.rowwise() - camera_origins.row(0);
+    else
+      frontier_vec = frontier_orig.rowwise() - camera_origins.row(j);
 
-  // Distance to each frontier
-  Eigen::VectorXd dist = frontier_vec.rowwise().norm();  // M x 1
+    dot_prod.col(j) =
+        frontier_vec * ray_dirs.row(j).transpose();  // (M x 3) * (1 x 3)^T = M x 1
+
+    dist.col(j) = frontier_vec.rowwise().norm();  // (M x 1)
+  }
 
   // Orthogonal distance
   Eigen::MatrixXd ortho_dist(M, N);
   for (int i = 0; i < M; ++i) {
     for (int j = 0; j < N; ++j) {
-      Eigen::RowVector3d closest =
-          dot_prod(i, j) * ray_dirs.row(j) + camera_origin.transpose();
+      Eigen::RowVector3d closest;
+      if (common_origin)
+        closest = dot_prod(i, j) * ray_dirs.row(j) + camera_origins.row(0);
+      else
+        closest = dot_prod(i, j) * ray_dirs.row(j) + camera_origins.row(j);
       ortho_dist(i, j) = (closest - frontier_orig.row(i)).norm();
     }
   }
 
   // Cost matrix
-  Eigen::MatrixXd ortho_norm = ortho_dist / ortho_dist.maxCoeff();  // M x N
-  Eigen::VectorXd dist_norm = dist / dist.maxCoeff();               // M x 1
-  Eigen::MatrixXd dist_norm_repeat = dist_norm.replicate(1, N);     // M x N
+  Eigen::MatrixXd ortho_norm = ortho_dist;  // M x N
+  Eigen::MatrixXd dist_norm = dist;         // M x N
+  for (int i = 0; i < M; ++i) {
+    double m1 = ortho_dist.row(i).maxCoeff();
+    if (m1 > 0.0)
+      ortho_norm.row(i) /= m1;
+    else
+      ortho_norm.row(i).setZero();
 
-  Eigen::MatrixXd cost_matrix = (ortho_norm + dist_norm_repeat) / 2.0;  // M x N
+    double m2 = dist.row(i).maxCoeff();
+    if (m2 > 0.0)
+      dist_norm.row(i) /= m2;
+    else
+      dist_norm.row(i).setZero();
+  }
+
+  Eigen::MatrixXd cost_matrix = (ortho_norm + dist_norm) / 2.0;  // M x N
 
   // NOTE: Make sure that frontier shape is extracted when frontiers are extracted
   Eigen::VectorXd frontier_sizes(M);
-  for (size_t i = 0; i < M; ++i) frontier_sizes(i) = frontiers[i].scale.maxCoeff();
+  for (int i = 0; i < M; ++i) frontier_sizes(i) = frontiers[i].scale.maxCoeff();
 
   // Mask criteria to filter out frontiers
   // TODO: Add config options for some of these
   Eigen::ArrayXX<bool> mask_dot = (dot_prod.array() <= 0.0);  // M x N
   Eigen::ArrayXX<bool> mask_ortho =
-      (ortho_dist.array() > frontier_sizes.array());  // M x N
+      (ortho_dist.array() > frontier_sizes.replicate(1, N).array());  // M x N
   Eigen::ArrayXX<bool> mask_close =
-      (dist.array() < 2.0 * frontier_sizes.array()).replicate(1, N);  // M x 1 -> M x N
-  Eigen::ArrayXX<bool> mask_far =
-      (dist.array() > 3.0 * sensor_range_).replicate(1, N);  // M x 1 -> M x N
+      (dist.array() < 2.0 * frontier_sizes.replicate(1, N).array());     // M x N
+  Eigen::ArrayXX<bool> mask_far = (dist.array() > 3.0 * sensor_range_);  // M x N
 
   Eigen::ArrayXXi mask_sum = (mask_dot.cast<int>() + mask_ortho.cast<int>() +
                               mask_close.cast<int>() + mask_far.cast<int>());
@@ -187,6 +242,8 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
     // If minimum cost is finite, this ray gets assigned to a frontier
     if (std::isfinite(cost)) {
       double weight = 1.0 - cost;
+      Eigen::Vector3d camera_origin =
+          common_origin ? camera_origins.row(0) : camera_origins.row(j);
       frontiers[idx].rayfronts.emplace_back(
           ray_dirs.row(j).transpose(), camera_origin, ray_labels[j], weight);
       assigned = true;
@@ -195,9 +252,20 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
   return assigned;
 }
 
+template bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd&,
+                                                 const std::vector<uint32_t>&,
+                                                 const Eigen::MatrixXd&,
+                                                 std::vector<Frontier>&);
+template bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd&,
+                                                 const std::vector<uint32_t>&,
+                                                 const Eigen::MatrixXd&,
+                                                 ConcatView<Frontier>&);
+
 void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
-                                     std::vector<Frontier>& frontiers) {
-  if (frontiers.size() == 0) return;
+                                     std::vector<Frontier>& frontiers,
+                                     std::vector<Frontier>& archived_frontiers) {
+  ConcatView<Frontier> frontier_view(frontiers, archived_frontiers);
+  if (frontier_view.size() == 0) return;
 
   // Get the rayfront extraction range
   const auto& camera = input.sensor_data->getSensor();
@@ -211,7 +279,8 @@ void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
   cv::Mat depth = input.sensor_data->depth_image;
 
   // Create a depth mask (and erode) based on sensor range
-  // TODO: Does this work when sensor_range is infinite? (i.e. points out of cam range)
+  // TODO: Does this work when sensor_range is infinite? (i.e. points out of cam
+  // range)
   cv::Mat mask;
   cv::threshold(depth, mask, sensor_range_, 255.0, cv::THRESH_BINARY);
 
@@ -243,10 +312,12 @@ void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
   }
 
   // Return early if no rays are assigned
-  if (!assignRayfronts(ray_dir, ray_labels, ray_orig, frontiers)) return;
+  Eigen::MatrixXd camera_origins(1, 3);
+  camera_origins.row(0) = ray_orig.transpose();
+  if (!assignRayfronts(ray_dir, ray_labels, camera_origins, frontier_view)) return;
 
   // Merge any rays within the same frontier
-  mergeRayfronts(frontiers);
+  mergeRayfronts(frontier_view);
 }
 
 }  // namespace hydra

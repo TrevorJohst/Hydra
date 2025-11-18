@@ -506,9 +506,10 @@ void FrontierExtractor::detectFrontiers(const ActiveWindowOutput& input,
   archived_places_.clear();
   just_archived_blocks_.clear();
 
-  if (rayfront_extractor_) rayfront_extractor_->addRayfronts(input, frontiers_);
+  if (rayfront_extractor_)
+    rayfront_extractor_->addRayfronts(input, frontiers_, archived_frontiers_);
 
-  Sink::callAll(sinks_, input.timestamp_ns, frontiers_);
+  Sink::callAll(sinks_, input.timestamp_ns, frontiers_, archived_frontiers_);
 }
 
 void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& graph) {

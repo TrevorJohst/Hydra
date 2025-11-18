@@ -17,7 +17,8 @@ class NearestNodeFinder;
 
 class FrontierExtractor {
  public:
-  using Sink = OutputSink<uint64_t, const std::vector<Frontier>&>;
+  using Sink =
+      OutputSink<uint64_t, const std::vector<Frontier>&, const std::vector<Frontier>&>;
 
   struct Config {
     char prefix = 'f';
