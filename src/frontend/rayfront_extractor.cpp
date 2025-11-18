@@ -23,18 +23,34 @@ struct AngleBinHash {
     return std::hash<int>()(k.theta_bin) ^ (std::hash<int>()(k.phi_bin) << 1);
   }
 };
+
+struct ConcatView {
+ public:
+  ConcatView(std::vector<Frontier>& a, std::vector<Frontier>& b) : a_(&a), b_(&b) {}
+
+  std::size_t size() const { return a_->size() + b_->size(); }
+
+  Frontier& operator[](std::size_t i) {
+    if (i < a_->size()) return (*a_)[i];
+    return (*b_)[i - a_->size()];
+  }
+
+ private:
+  std::vector<Frontier>* a_;
+  std::vector<Frontier>* b_;
+};
 }  // namespace
 
-void declare_config(RayFrontExtractor::Config& config) {
+void declare_config(RayfrontExtractor::Config& config) {
   using namespace config;
-  name("RayFrontExtractor::Config");
+  name("RayfrontExtractor::Config");
   field(config.erosion_kernel_size, "erosion_kernel_size");
   field(config.rayfront_range, "rayfront_range");
 }
 
-RayFrontExtractor::RayFrontExtractor(const Config& config) : config(config) {}
+RayfrontExtractor::RayfrontExtractor(const Config& config) : config(config) {}
 
-void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
+void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
                                      std::vector<Frontier>& frontiers) {
   if (frontiers.size() == 0) return;
 
@@ -67,17 +83,21 @@ void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
   std::vector<cv::Point> candidate_rays_idx;
   cv::findNonZero(eroded_mask, candidate_rays_idx);
 
+  // Camera pose
+  Eigen::Isometry3d world_T_camera = input.sensor_data->getSensorPose();
+  Eigen::Vector3d ray_orig = world_T_camera.translation();     // 3 x 1
+  Eigen::Matrix3d world_R_camera = world_T_camera.rotation();  // 3 x 3
+
   int N = candidate_rays_idx.size();
   Eigen::MatrixXd ray_dir(N, 3);  // N x 3
   std::vector<uint32_t> ray_labels(N);
   for (int i = 0; i < N; ++i) {
     const auto& pt = candidate_rays_idx[i];
-    ray_dir.row(i) = camera.getPixelBearing(pt.x, pt.y).cast<double>();
+    Eigen::Vector3d dir_world =
+        world_R_camera * camera.getPixelBearing(pt.x, pt.y).cast<double>();
+    ray_dir.row(i) = dir_world.normalized().transpose();
     ray_labels[i] = labels.at<uint32_t>(pt);
   }
-
-  Eigen::Isometry3d world_T_camera = input.sensor_data->getSensorPose();
-  Eigen::Vector3d ray_orig = world_T_camera.translation();  // 3 x 1
 
   // Make a matrix of frontier positions for calculations
   int M = frontiers.size();
@@ -117,14 +137,14 @@ void RayFrontExtractor::addRayFronts(const ActiveWindowOutput& input,
 
   // Mask criteria to filter out frontiers
   // TODO: Add config options for some of these
-  Eigen::ArrayXX<bool> mask_dot = (dot_prod.array() <= 0.0);  // M x N
-  // Eigen::ArrayXX<bool> mask_ortho = (ortho_dist.array() > frontier_size);  // M x N
+  Eigen::ArrayXX<bool> mask_dot = (dot_prod.array() <= 0.0);               // M x N
+  Eigen::ArrayXX<bool> mask_ortho = (ortho_dist.array() > frontier_size);  // M x N
   Eigen::ArrayXX<bool> mask_close =
       (dist.array() < 2.0 * frontier_size).replicate(1, N);  // M x N
   Eigen::ArrayXX<bool> mask_far =
       (dist.array() > 3.0 * sensor_range).replicate(1, N);  // M x N
 
-  Eigen::ArrayXXi mask_sum = (mask_dot.cast<int>() +  // mask_ortho.cast<int>() +
+  Eigen::ArrayXXi mask_sum = (mask_dot.cast<int>() + mask_ortho.cast<int>() +
                               mask_close.cast<int>() + mask_far.cast<int>());
   Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic> frontier_mask =
       (mask_sum > 0).matrix();
