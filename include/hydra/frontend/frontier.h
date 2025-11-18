@@ -12,15 +12,20 @@ namespace hydra {
 struct RayFront {
  public:
   RayFront(){};
-  RayFront(const Eigen::Vector3d& p, uint32_t label, double weight)
-      : direction(p),
-        theta(std::acos(p.z() / p.norm())),
-        phi(std::atan2(p.y(), p.x())),
+  RayFront(const Eigen::Vector3d& d,
+           const Eigen::Vector3d& o,
+           uint32_t label,
+           double weight)
+      : direction(d),
+        camera_origin(o),
+        theta(std::acos(d.z() / d.norm())),
+        phi(std::atan2(d.y(), d.x())),
         weight(weight),
         semantic_label(label){};
 
  public:
   Eigen::Vector3d direction;
+  Eigen::Vector3d camera_origin;
   double theta;
   double phi;
   double weight;
