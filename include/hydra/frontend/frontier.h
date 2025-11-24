@@ -9,10 +9,10 @@
 
 namespace hydra {
 
-struct RayFront {
+struct Rayfront {
  public:
-  RayFront(){};
-  RayFront(const Eigen::Vector3d& d,
+  Rayfront(){};
+  Rayfront(const Eigen::Vector3d& d,
            const Eigen::Vector3d& o,
            uint32_t label,
            double weight)
@@ -60,7 +60,7 @@ struct Frontier {
   size_t num_frontier_voxels = 0;
   spatial_hash::BlockIndex block_index;
   bool has_shape_information = false;
-  std::vector<RayFront> rayfronts;
+  std::vector<Rayfront> rayfronts;
 };
 
 }  // namespace hydra

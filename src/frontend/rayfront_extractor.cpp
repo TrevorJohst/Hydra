@@ -6,7 +6,11 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include "hydra/utils/timing_utilities.h"
+
 namespace hydra {
+
+using timing::ScopedTimer;
 
 // Local helpers
 namespace {
@@ -24,35 +28,15 @@ struct AngleBinHash {
     return std::hash<int>()(k.theta_bin) ^ (std::hash<int>()(k.phi_bin) << 1);
   }
 };
-
-template <typename T>
-struct ConcatView {
-  std::vector<T>& a;
-  std::vector<T>& b;
-
-  ConcatView(std::vector<T>& a_, std::vector<T>& b_) : a(a_), b(b_) {}
-
-  size_t size() const { return a.size() + b.size(); }
-
-  T& operator[](size_t i) {
-    if (i < a.size()) return (a)[i];
-    if (i - a.size() < b.size()) return b[i - a.size()];
-    throw std::out_of_range("ConcatView index out of range");
-  }
-
-  const T& operator[](size_t i) const {
-    if (i < a.size()) return (a)[i];
-    if (i - a.size() < b.size()) return b[i - a.size()];
-    throw std::out_of_range("ConcatView index out of range");
-  }
-};
 }  // namespace
 
 void declare_config(RayfrontExtractor::Config& config) {
   using namespace config;
   name("RayfrontExtractor::Config");
+  field(config.image_scale, "image_scale");
   field(config.erosion_kernel_size, "erosion_kernel_size");
   field(config.rayfront_range, "rayfront_range");
+  field(config.angle_bin_deg, "angle_bin_deg");
 }
 
 RayfrontExtractor::RayfrontExtractor(const Config& config)
@@ -67,16 +51,16 @@ void RayfrontExtractor::mergeRayfronts(FrontierArrayLike& frontiers) {
     Frontier& frontier = frontiers[i];
     if (frontier.rayfronts.size() <= 1) continue;
 
-    std::unordered_map<AngleBin, std::vector<RayFront>, AngleBinHash> bins;
+    std::unordered_map<AngleBin, std::vector<Rayfront>, AngleBinHash> bins;
 
     // Bin rays by angle
-    for (const RayFront& rf : frontier.rayfronts) {
+    for (const Rayfront& rf : frontier.rayfronts) {
       int theta_bin = static_cast<int>(std::floor(rf.theta / angle_bin_rad));
       int phi_bin = static_cast<int>(std::floor((rf.phi + M_PI) / angle_bin_rad));
       bins[{theta_bin, phi_bin}].push_back(rf);
     }
 
-    std::vector<RayFront> merged;
+    std::vector<Rayfront> merged;
     merged.reserve(bins.size());
 
     // Weight the rayfronts within their bins
@@ -127,7 +111,33 @@ void RayfrontExtractor::mergeRayfronts(FrontierArrayLike& frontiers) {
 }
 
 template void RayfrontExtractor::mergeRayfronts(std::vector<Frontier>&);
-template void RayfrontExtractor::mergeRayfronts(ConcatView<Frontier>&);
+template void RayfrontExtractor::mergeRayfronts(RayfrontExtractor::FrontierConcatView&);
+
+template <typename FrontierArrayLike>
+bool RayfrontExtractor::assignRayfronts(const std::vector<Rayfront>& rayfronts,
+                                        FrontierArrayLike& frontiers) {
+  int N = rayfronts.size();
+  int M = frontiers.size();
+  if (N == 0 || M == 0) return false;
+
+  // Vectorize rayfronts
+  Eigen::MatrixXd ray_dirs(N, 3);
+  std::vector<uint32_t> ray_labels(N);
+  Eigen::MatrixXd camera_origins(N, 3);
+  for (int i = 0; i < N; ++i) {
+    auto& rf = rayfronts[i];
+    ray_dirs.row(i) = rf.direction.transpose();
+    ray_labels[i] = rf.semantic_label;
+    camera_origins.row(i) = rf.camera_origin.transpose();
+  }
+
+  return assignRayfronts(ray_dirs, ray_labels, camera_origins, frontiers);
+}
+
+template bool RayfrontExtractor::assignRayfronts(const std::vector<Rayfront>&,
+                                                 std::vector<Frontier>&);
+template bool RayfrontExtractor::assignRayfronts(
+    const std::vector<Rayfront>&, RayfrontExtractor::FrontierConcatView&);
 
 template <typename FrontierArrayLike>
 bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
@@ -163,17 +173,25 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
   // Dot product from frontier to rayfront and distance to each frontier
   Eigen::MatrixXd dot_prod(M, N);
   Eigen::MatrixXd dist(M, N);
-  for (int j = 0; j < N; ++j) {
-    Eigen::MatrixXd frontier_vec;  // M x 3
-    if (common_origin)
-      frontier_vec = frontier_orig.rowwise() - camera_origins.row(0);
-    else
-      frontier_vec = frontier_orig.rowwise() - camera_origins.row(j);
 
-    dot_prod.col(j) =
-        frontier_vec * ray_dirs.row(j).transpose();  // (M x 3) * (1 x 3)^T = M x 1
+  if (common_origin) {
+    Eigen::MatrixXd frontier_vec =
+        frontier_orig.rowwise() - camera_origins.row(0);  // (M x 3) - (1 x 3) = M x 3
 
-    dist.col(j) = frontier_vec.rowwise().norm();  // (M x 1)
+    dot_prod = frontier_vec * ray_dirs.transpose();  // (M x 3) * (N x 3)^T = M x N
+
+    dist = frontier_vec.rowwise().norm().replicate(1, N);  // M x N
+
+  } else {
+    for (int j = 0; j < N; ++j) {
+      Eigen::MatrixXd frontier_vec =
+          frontier_orig.rowwise() - camera_origins.row(j);  // M x 3
+
+      dot_prod.col(j) =
+          frontier_vec * ray_dirs.row(j).transpose();  // (M x 3) * (1 x 3)^T = M x 1
+
+      dist.col(j) = frontier_vec.rowwise().norm();  // (M x 1)
+    }
   }
 
   // Orthogonal distance
@@ -256,27 +274,44 @@ template bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd&,
                                                  const std::vector<uint32_t>&,
                                                  const Eigen::MatrixXd&,
                                                  std::vector<Frontier>&);
-template bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd&,
-                                                 const std::vector<uint32_t>&,
-                                                 const Eigen::MatrixXd&,
-                                                 ConcatView<Frontier>&);
+template bool RayfrontExtractor::assignRayfronts(
+    const Eigen::MatrixXd&,
+    const std::vector<uint32_t>&,
+    const Eigen::MatrixXd&,
+    RayfrontExtractor::FrontierConcatView&);
 
 void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
                                      std::vector<Frontier>& frontiers,
                                      std::vector<Frontier>& archived_frontiers) {
-  ConcatView<Frontier> frontier_view(frontiers, archived_frontiers);
+  FrontierConcatView frontier_view(frontiers, archived_frontiers);
   if (frontier_view.size() == 0) return;
+
+  ScopedTimer timer("rayfronts/extract_rays", input.timestamp_ns);
 
   // Get the rayfront extraction range
   const auto& camera = input.sensor_data->getSensor();
   setSensorRange(camera);
 
   // Extract labeled image from the input
-  cv::Mat labels = input.sensor_data->label_image;
+  cv::Mat labels_full = input.sensor_data->label_image;
 
   // Extract depth image from the input
   // NOTE: Depth image doesnt always exist, range image does
-  cv::Mat depth = input.sensor_data->depth_image;
+  cv::Mat depth_full = input.sensor_data->depth_image;
+
+  cv::Mat labels, depth;
+  cv::resize(labels_full,
+             labels,
+             cv::Size(),
+             config.image_scale,
+             config.image_scale,
+             cv::INTER_NEAREST);
+  cv::resize(depth_full,
+             depth,
+             cv::Size(),
+             config.image_scale,
+             config.image_scale,
+             cv::INTER_NEAREST);
 
   // Create a depth mask (and erode) based on sensor range
   // TODO: Does this work when sensor_range is infinite? (i.e. points out of cam
@@ -301,23 +336,33 @@ void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
   Eigen::Matrix3d world_R_camera = world_T_camera.rotation();  // 3 x 3
 
   int N = candidate_rays_idx.size();
+  double pixel_scale = 1.0 / config.image_scale;
   Eigen::MatrixXd ray_dir(N, 3);  // N x 3
   std::vector<uint32_t> ray_labels(N);
   for (int i = 0; i < N; ++i) {
     const auto& pt = candidate_rays_idx[i];
     Eigen::Vector3d dir_world =
-        world_R_camera * camera.getPixelBearing(pt.x, pt.y).cast<double>();
+        world_R_camera *
+        camera.getPixelBearing(pixel_scale * pt.x, pixel_scale * pt.y).cast<double>();
     ray_dir.row(i) = dir_world.normalized().transpose();
     ray_labels[i] = labels.at<uint32_t>(pt);
   }
 
+  timer.stop();
+
   // Return early if no rays are assigned
   Eigen::MatrixXd camera_origins(1, 3);
   camera_origins.row(0) = ray_orig.transpose();
-  if (!assignRayfronts(ray_dir, ray_labels, camera_origins, frontier_view)) return;
+  {
+    ScopedTimer timer("rayfronts/assign_rays", input.timestamp_ns);
+    if (!assignRayfronts(ray_dir, ray_labels, camera_origins, frontier_view)) return;
+  }
 
   // Merge any rays within the same frontier
-  mergeRayfronts(frontier_view);
+  {
+    ScopedTimer timer("rayfronts/merge_rays", input.timestamp_ns);
+    mergeRayfronts(frontier_view);
+  }
 }
 
 }  // namespace hydra

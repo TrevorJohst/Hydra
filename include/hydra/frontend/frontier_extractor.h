@@ -65,6 +65,7 @@ class FrontierExtractor {
   std::unique_ptr<RayfrontExtractor> rayfront_extractor_;
   std::vector<Frontier> frontiers_;
   std::vector<Frontier> archived_frontiers_;
+  std::vector<Rayfront> rayfront_buffer_;
 
   Sink::List sinks_;
 

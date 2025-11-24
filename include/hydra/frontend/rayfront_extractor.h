@@ -10,6 +10,7 @@ namespace hydra {
 class RayfrontExtractor {
  public:
   struct Config {
+    double image_scale = 0.5;
     int erosion_kernel_size = 3;
     double rayfront_range = -1.0;
     double angle_bin_deg = 30.0;
@@ -25,6 +26,16 @@ class RayfrontExtractor {
    */
   template <typename FrontierArrayLike>
   void mergeRayfronts(FrontierArrayLike& frontiers);
+
+  /**
+   * @brief Assigns rayfronts to their best frontier based on the cost function.
+   * @param rayfronts Vector of length N containing rayfronts to re-assign
+   * @param frontiers `std::vector<Frontier>` of length M with the candidate frontiers
+   * @return True if any rays were assigned to a frontier
+   */
+  template <typename FrontierArrayLike>
+  bool assignRayfronts(const std::vector<hydra::Rayfront>& rayfronts,
+                       FrontierArrayLike& frontiers);
 
   /**
    * @brief Assigns rayfronts to their best frontier based on the cost function.
@@ -58,6 +69,29 @@ class RayfrontExtractor {
     // Config takes priority when explicitly set by user
     sensor_range_ =
         (config.rayfront_range < 0.0) ? camera.max_range() : config.rayfront_range;
+  };
+
+  // Helper to handle disjointed frontier vectors
+  struct FrontierConcatView {
+    std::vector<Frontier>& a;
+    std::vector<Frontier>& b;
+
+    FrontierConcatView(std::vector<Frontier>& a_, std::vector<Frontier>& b_)
+        : a(a_), b(b_) {}
+
+    size_t size() const { return a.size() + b.size(); }
+
+    Frontier& operator[](size_t i) {
+      if (i < a.size()) return (a)[i];
+      if (i - a.size() < b.size()) return b[i - a.size()];
+      throw std::out_of_range("FrontierConcatView index out of range");
+    }
+
+    const Frontier& operator[](size_t i) const {
+      if (i < a.size()) return (a)[i];
+      if (i - a.size() < b.size()) return b[i - a.size()];
+      throw std::out_of_range("FrontierConcatView index out of range");
+    }
   };
 
  private:

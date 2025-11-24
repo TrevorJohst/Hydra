@@ -29,11 +29,13 @@
 #include "hydra/frontend/frontier_extractor.h"
 #include "hydra/reconstruction/voxel_types.h"
 #include "hydra/utils/nearest_neighbor_utilities.h"
+#include "hydra/utils/timing_utilities.h"
 
 namespace hydra {
 
 using spatial_hash::IndexSet;
 using SpatialCloud = pcl::PointCloud<pcl::PointXYZ>;
+using timing::ScopedTimer;
 
 template <typename T, size_t N>
 std::pair<T, Eigen::Matrix<T, N, 1>> getMaxEigenvector(Eigen::Matrix<T, N, N> cov) {
@@ -506,8 +508,10 @@ void FrontierExtractor::detectFrontiers(const ActiveWindowOutput& input,
   archived_places_.clear();
   just_archived_blocks_.clear();
 
-  if (rayfront_extractor_)
+  if (rayfront_extractor_) {
+    ScopedTimer timer("frontiers/add_rayfronts", input.timestamp_ns);
     rayfront_extractor_->addRayfronts(input, frontiers_, archived_frontiers_);
+  }
 
   Sink::callAll(sinks_, input.timestamp_ns, frontiers_, archived_frontiers_);
 }
@@ -517,6 +521,12 @@ void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& g
     graph.removeNode(nid_bix.first);
   }
   nodes_to_remove_.clear();
+  if (rayfront_extractor_) {
+    ScopedTimer timer("frontiers/rayfront_buffer", timestamp_ns);
+    auto view = RayfrontExtractor::FrontierConcatView(frontiers_, archived_frontiers_);
+    rayfront_extractor_->assignRayfronts(rayfront_buffer_, view);
+    rayfront_buffer_.clear();
+  }
 
   if (!place_finder_) {
     return;
@@ -547,6 +557,11 @@ void FrontierExtractor::addFrontiers(uint64_t timestamp_ns, DynamicSceneGraph& g
           graph.emplaceNode(DsgLayers::PLACES, next_node_id_, std::move(attrs));
           graph.insertEdge(place_id, next_node_id_);
         });
+
+    // If a frontier is to be removed next loop, add it back to the assignment buffer
+    rayfront_buffer_.insert(rayfront_buffer_.end(),
+                            std::make_move_iterator(frontier.rayfronts.begin()),
+                            std::make_move_iterator(frontier.rayfronts.end()));
 
     nodes_to_remove_.push_back({next_node_id_, frontier.block_index});
     ++next_node_id_;
