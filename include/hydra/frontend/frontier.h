@@ -12,8 +12,8 @@ namespace hydra {
 struct Rayfront {
  public:
   Rayfront(){};
-  Rayfront(const Eigen::Vector3d& d,
-           const Eigen::Vector3d& o,
+  Rayfront(const Eigen::Vector3f& d,
+           const Eigen::Vector3f& o,
            uint32_t label,
            double weight)
       : direction(d),
@@ -24,8 +24,8 @@ struct Rayfront {
         semantic_label(label){};
 
  public:
-  Eigen::Vector3d direction;
-  Eigen::Vector3d camera_origin;
+  Eigen::Vector3f direction;
+  Eigen::Vector3f camera_origin;
   double theta;
   double phi;
   double weight;

@@ -46,9 +46,9 @@ class RayfrontExtractor {
    * @return True if any rays were assigned to a frontier
    */
   template <typename FrontierArrayLike>
-  bool assignRayfronts(const Eigen::MatrixXd& ray_dirs,
+  bool assignRayfronts(const Eigen::MatrixXf& ray_dirs,
                        const std::vector<uint32_t>& ray_labels,
-                       const Eigen::MatrixXd& camera_origins,
+                       const Eigen::MatrixXf& camera_origins,
                        FrontierArrayLike& frontiers);
 
   /**

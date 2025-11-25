@@ -83,9 +83,9 @@ void RayfrontExtractor::mergeRayfronts(FrontierArrayLike& frontiers) {
       }
 
       // Linear weighting of direction, highest weight origin for this label
-      Eigen::Vector3d weighted_dir(0.0, 0.0, 0.0);
+      Eigen::Vector3f weighted_dir(0.0, 0.0, 0.0);
       double sum_weight = 0.0;
-      Eigen::Vector3d dominant_origin;
+      Eigen::Vector3f dominant_origin;
       double max_weight = -1.0;
 
       for (const auto& rf : rayfronts_vec) {
@@ -121,9 +121,9 @@ bool RayfrontExtractor::assignRayfronts(const std::vector<Rayfront>& rayfronts,
   if (N == 0 || M == 0) return false;
 
   // Vectorize rayfronts
-  Eigen::MatrixXd ray_dirs(N, 3);
+  Eigen::MatrixXf ray_dirs(N, 3);
   std::vector<uint32_t> ray_labels(N);
-  Eigen::MatrixXd camera_origins(N, 3);
+  Eigen::MatrixXf camera_origins(N, 3);
   for (int i = 0; i < N; ++i) {
     auto& rf = rayfronts[i];
     ray_dirs.row(i) = rf.direction.transpose();
@@ -140,9 +140,9 @@ template bool RayfrontExtractor::assignRayfronts(
     const std::vector<Rayfront>&, RayfrontExtractor::FrontierConcatView&);
 
 template <typename FrontierArrayLike>
-bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
+bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXf& ray_dirs,
                                         const std::vector<uint32_t>& ray_labels,
-                                        const Eigen::MatrixXd& camera_origins,
+                                        const Eigen::MatrixXf& camera_origins,
                                         FrontierArrayLike& frontiers) {
   // Guards
   if (sensor_range_ < 0.0) {
@@ -167,15 +167,16 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
   if (N == 0 || M == 0) return false;
 
   // Make a matrix of frontier positions for calculations
-  Eigen::MatrixXd frontier_orig(M, 3);  // M x 3
-  for (int i = 0; i < M; ++i) frontier_orig.row(i) = frontiers[i].center;
+  Eigen::MatrixXf frontier_orig(M, 3);  // M x 3
+  for (int i = 0; i < M; ++i)
+    frontier_orig.row(i) = frontiers[i].center.template cast<float>();
 
   // Dot product from frontier to rayfront and distance to each frontier
-  Eigen::MatrixXd dot_prod(M, N);
-  Eigen::MatrixXd dist(M, N);
+  Eigen::MatrixXf dot_prod(M, N);
+  Eigen::MatrixXf dist(M, N);
 
   if (common_origin) {
-    Eigen::MatrixXd frontier_vec =
+    Eigen::MatrixXf frontier_vec =
         frontier_orig.rowwise() - camera_origins.row(0);  // (M x 3) - (1 x 3) = M x 3
 
     dot_prod = frontier_vec * ray_dirs.transpose();  // (M x 3) * (N x 3)^T = M x N
@@ -184,7 +185,7 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
 
   } else {
     for (int j = 0; j < N; ++j) {
-      Eigen::MatrixXd frontier_vec =
+      Eigen::MatrixXf frontier_vec =
           frontier_orig.rowwise() - camera_origins.row(j);  // M x 3
 
       dot_prod.col(j) =
@@ -195,10 +196,10 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
   }
 
   // Orthogonal distance
-  Eigen::MatrixXd ortho_dist(M, N);
+  Eigen::MatrixXf ortho_dist(M, N);
   for (int i = 0; i < M; ++i) {
     for (int j = 0; j < N; ++j) {
-      Eigen::RowVector3d closest;
+      Eigen::RowVector3f closest;
       if (common_origin)
         closest = dot_prod(i, j) * ray_dirs.row(j) + camera_origins.row(0);
       else
@@ -208,8 +209,8 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
   }
 
   // Cost matrix
-  Eigen::MatrixXd ortho_norm = ortho_dist;  // M x N
-  Eigen::MatrixXd dist_norm = dist;         // M x N
+  Eigen::MatrixXf ortho_norm = ortho_dist;  // M x N
+  Eigen::MatrixXf dist_norm = dist;         // M x N
   for (int i = 0; i < M; ++i) {
     double m1 = ortho_dist.row(i).maxCoeff();
     if (m1 > 0.0)
@@ -224,10 +225,10 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
       dist_norm.row(i).setZero();
   }
 
-  Eigen::MatrixXd cost_matrix = (ortho_norm + dist_norm) / 2.0;  // M x N
+  Eigen::MatrixXf cost_matrix = (ortho_norm + dist_norm) / 2.0;  // M x N
 
-  // NOTE: Make sure that frontier shape is extracted when frontiers are extracted
-  Eigen::VectorXd frontier_sizes(M);
+  // TODO: Make sure that frontier shape is extracted when frontiers are extracted
+  Eigen::VectorXf frontier_sizes(M);
   for (int i = 0; i < M; ++i) frontier_sizes(i) = frontiers[i].scale.maxCoeff();
 
   // Mask criteria to filter out frontiers
@@ -246,7 +247,7 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
 
   // Masks the cost matrix setting filtered frontiers to infinity
   cost_matrix = frontier_mask.select(
-      Eigen::ArrayXXd::Constant(cost_matrix.rows(),
+      Eigen::ArrayXXf::Constant(cost_matrix.rows(),
                                 cost_matrix.cols(),
                                 std::numeric_limits<double>::infinity()),
       cost_matrix.array());
@@ -260,7 +261,7 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
     // If minimum cost is finite, this ray gets assigned to a frontier
     if (std::isfinite(cost)) {
       double weight = 1.0 - cost;
-      Eigen::Vector3d camera_origin =
+      Eigen::Vector3f camera_origin =
           common_origin ? camera_origins.row(0) : camera_origins.row(j);
       frontiers[idx].rayfronts.emplace_back(
           ray_dirs.row(j).transpose(), camera_origin, ray_labels[j], weight);
@@ -270,14 +271,14 @@ bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd& ray_dirs,
   return assigned;
 }
 
-template bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXd&,
+template bool RayfrontExtractor::assignRayfronts(const Eigen::MatrixXf&,
                                                  const std::vector<uint32_t>&,
-                                                 const Eigen::MatrixXd&,
+                                                 const Eigen::MatrixXf&,
                                                  std::vector<Frontier>&);
 template bool RayfrontExtractor::assignRayfronts(
-    const Eigen::MatrixXd&,
+    const Eigen::MatrixXf&,
     const std::vector<uint32_t>&,
-    const Eigen::MatrixXd&,
+    const Eigen::MatrixXf&,
     RayfrontExtractor::FrontierConcatView&);
 
 void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
@@ -337,13 +338,13 @@ void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
 
   int N = candidate_rays_idx.size();
   double pixel_scale = 1.0 / config.image_scale;
-  Eigen::MatrixXd ray_dir(N, 3);  // N x 3
+  Eigen::MatrixXf ray_dir(N, 3);  // N x 3
   std::vector<uint32_t> ray_labels(N);
   for (int i = 0; i < N; ++i) {
     const auto& pt = candidate_rays_idx[i];
-    Eigen::Vector3d dir_world =
-        world_R_camera *
-        camera.getPixelBearing(pixel_scale * pt.x, pixel_scale * pt.y).cast<double>();
+    Eigen::Vector3f dir_world =
+        world_R_camera.cast<float>() *
+        camera.getPixelBearing(pixel_scale * pt.x, pixel_scale * pt.y);
     ray_dir.row(i) = dir_world.normalized().transpose();
     ray_labels[i] = labels.at<uint32_t>(pt);
   }
@@ -351,8 +352,8 @@ void RayfrontExtractor::addRayfronts(const ActiveWindowOutput& input,
   timer.stop();
 
   // Return early if no rays are assigned
-  Eigen::MatrixXd camera_origins(1, 3);
-  camera_origins.row(0) = ray_orig.transpose();
+  Eigen::MatrixXf camera_origins(1, 3);
+  camera_origins.row(0) = ray_orig.transpose().cast<float>();
   {
     ScopedTimer timer("rayfronts/assign_rays", input.timestamp_ns);
     if (!assignRayfronts(ray_dir, ray_labels, camera_origins, frontier_view)) return;
