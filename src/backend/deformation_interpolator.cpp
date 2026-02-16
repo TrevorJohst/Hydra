@@ -40,7 +40,11 @@
 #include <glog/logging.h>
 #include <hydra/common/global_info.h>
 #include <kimera_pgmo/deformation_graph.h>
+#include <kimera_pgmo/mesh_types.h>
+#include <kimera_pgmo/utils/common_functions.h>
 #include <spark_dsg/node_symbol.h>
+
+#include "hydra/utils/pgmo_mesh_traits.h"  // IWYU pragma: keep
 
 namespace hydra {
 namespace {
@@ -108,6 +112,11 @@ struct EntryList {
 };
 
 size_t pgmoNumVertices(const EntryList& entries) { return entries.entries.size(); }
+
+kimera_pgmo::traits::VertexProperties pgmoGetVertexProperties(
+    const EntryList& /* entries */) {
+  return {false, true, false, false};
+}
 
 kimera_pgmo::traits::Pos pgmoGetVertex(const EntryList& entries,
                                        size_t i,

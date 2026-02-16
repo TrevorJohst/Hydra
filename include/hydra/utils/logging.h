@@ -33,17 +33,26 @@
  * purposes notwithstanding any copyright notation herein.
  * -------------------------------------------------------------------------- */
 #pragma once
+#include <string>
 
 namespace hydra {
 
 struct VerbosityConfig {
   int verbosity = 0;
+  std::string prefix = "";
+
+  VerbosityConfig() = default;
+  VerbosityConfig(int verbosity);
+  VerbosityConfig(const std::string& prefix, int verbosity = 0);
+
+  //! Make a copy of the verbosity config with a prefix derived from the provided name
+  VerbosityConfig with_name(const std::string& name) const;
 };
 
 void declare_config(VerbosityConfig& config);
 
 // NOTE(nathan) you need to include <glog/logging.h> for this to work, but
 // I don't want have <glog/logging.h> included in a bunch of header files
-#define MLOG(V) LOG_IF(INFO, config.verbosity >= V)
+#define MLOG(V) LOG_IF(INFO, config.verbosity >= V) << config.prefix
 
 }  // namespace hydra

@@ -35,6 +35,8 @@
 #pragma once
 #include <config_utilities/virtual_config.h>
 #include <kimera_pgmo/hashing.h>
+#include <kimera_pgmo/mesh_offset_info.h>
+#include <kimera_pgmo/utils/graph.h>
 #include <pose_graph_tools/bow_query.h>
 #include <spark_dsg/scene_graph_logger.h>
 
@@ -49,10 +51,10 @@
 #include "hydra/common/output_sink.h"
 #include "hydra/common/shared_dsg_info.h"
 #include "hydra/common/shared_module_state.h"
-#include "hydra/frontend/freespace_places_interface.h"
 #include "hydra/frontend/graph_connector.h"
+#include "hydra/frontend/gvd_place_extractor.h"
 #include "hydra/frontend/mesh_segmenter.h"
-#include "hydra/frontend/surface_places_interface.h"
+#include "hydra/frontend/surface_place_extractor.h"
 #include "hydra/frontend/traversability_place_extractor.h"
 #include "hydra/frontend/view_database.h"
 #include "hydra/loop_closure/lcd_input.h"
@@ -62,6 +64,7 @@
 namespace kimera_pgmo {
 class DeltaCompression;
 class MeshCompression;
+class MeshDelta;
 }  // namespace kimera_pgmo
 
 namespace hydra {
@@ -89,17 +92,14 @@ class GraphBuilder : public Module {
     MeshSegmenter::Config object_config;
     config::VirtualConfig<PoseGraphTracker> pose_graph_tracker{
         PoseGraphFromOdom::Config()};
-    bool enable_place_mesh_mapping = false;
-    config::VirtualConfig<SurfacePlacesInterface> surface_places;
-    config::VirtualConfig<FreespacePlacesInterface> freespace_places;
+    config::VirtualConfig<SurfacePlaceExtractor> surface_places;
+    config::VirtualConfig<GvdPlaceExtractor> freespace_places;
     config::VirtualConfig<places::TraversabilityPlaceExtractor> traversability_places;
     config::VirtualConfig<FrontierExtractor> frontier_places;
     ViewDatabase::Config view_database;
     std::vector<Sink::Factory> sinks;
     //! @brief Disable merging update packets from the active window if true
     bool no_packet_collation = false;
-    //! @brief Overwrite mesh timestamps using information from tracking layer
-    bool overwrite_mesh_timestamps = false;
     //! @brief Drop object meshes for memory savings
     bool clear_object_meshes = false;
   } const config;
@@ -161,8 +161,6 @@ class GraphBuilder : public Module {
 
   void processNextInput(const ActiveWindowOutput& msg);
 
-  void updatePlaceMeshMapping(const ActiveWindowOutput& input);
-
  protected:
   uint64_t sequence_number_;
   std::atomic<bool> should_shutdown_{false};
@@ -175,14 +173,12 @@ class GraphBuilder : public Module {
 
   SharedDsgInfo::Ptr dsg_;
   SharedModuleState::Ptr state_;
-  kimera_pgmo::MeshDelta::Ptr last_mesh_update_;
-  StampUpdate::Ptr last_mesh_stamp_update_;
+  kimera_pgmo::MeshOffsetInfo mesh_offsets_;
+  std::shared_ptr<kimera_pgmo::MeshDelta> last_mesh_update_;
 
   kimera_pgmo::Graph deformation_graph_;
   std::unique_ptr<kimera_pgmo::DeltaCompression> mesh_compression_;
   std::unique_ptr<kimera_pgmo::MeshCompression> deformation_compression_;
-  kimera_pgmo::HashedIndexMapping deformation_remapping_;
-  std::shared_ptr<kimera_pgmo::HashedIndexMapping> mesh_remapping_;
 
   GraphUpdater graph_updater_;
   GraphConnector graph_connector_;
@@ -190,9 +186,9 @@ class GraphBuilder : public Module {
   std::unique_ptr<VolumetricWindow> map_window_;
   std::unique_ptr<MeshSegmenter> segmenter_;
   std::unique_ptr<PoseGraphTracker> tracker_;
-  std::unique_ptr<SurfacePlacesInterface> surface_places_;
+  std::unique_ptr<SurfacePlaceExtractor> surface_places_;
   std::unique_ptr<places::TraversabilityPlaceExtractor> traversability_places_;
-  std::unique_ptr<FreespacePlacesInterface> freespace_places_;
+  std::unique_ptr<GvdPlaceExtractor> freespace_places_;
   std::unique_ptr<FrontierExtractor> frontier_places_;
   ViewDatabase view_database_;
 

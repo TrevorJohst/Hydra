@@ -7,6 +7,7 @@
 #include "hydra/active_window/active_window_output.h"
 #include "hydra/active_window/volumetric_window.h"
 #include "hydra/common/dsg_types.h"
+#include "hydra/utils/nearest_neighbor_utilities.h"
 #include "hydra/common/output_sink.h"
 #include "hydra/frontend/frontier.h"
 #include "hydra/frontend/rayfront_extractor.h"

@@ -34,30 +34,21 @@
  * -------------------------------------------------------------------------- */
 #pragma once
 
-#include "hydra/active_window/active_window_output.h"
-#include "hydra/common/dsg_types.h"
+#include <spark_dsg/mesh.h>
+#include <spark_dsg/node_attributes.h>
+#include <spark_dsg/scene_graph_layer.h>
 
-namespace hydra {
+#include <set>
 
-class FreespacePlacesInterface {
- public:
-  using PositionMatrix = Eigen::Matrix<double, 3, Eigen::Dynamic>;
+namespace hydra::utils {
 
-  FreespacePlacesInterface() {}
+void reallocateMeshPoints(const spark_dsg::Mesh& mesh,
+                          spark_dsg::Place2dNodeAttributes& attrs1,
+                          spark_dsg::Place2dNodeAttributes& attrs2);
 
-  virtual ~FreespacePlacesInterface() = default;
+void propagateReallocation(const spark_dsg::Mesh& mesh,
+                           const spark_dsg::SceneGraphLayer& layer,
+                           const std::set<spark_dsg::NodeId>& changed_nodes,
+                           std::set<spark_dsg::NodeId>& seen_nodes);
 
-  virtual void detect(const ActiveWindowOutput& msg) = 0;
-
-  virtual void updateGraph(uint64_t timestamp_ns, DynamicSceneGraph& graph) = 0;
-
-  virtual NodeIdSet getActiveNodes() const = 0;
-
-  // takes in a 3xN matrix
-  virtual std::vector<bool> inFreespace(const PositionMatrix& /* positions */,
-                                        double /* freespace_distance_m */) const {
-    return {};
-  }
-};
-
-}  // namespace hydra
+}  // namespace hydra::utils
